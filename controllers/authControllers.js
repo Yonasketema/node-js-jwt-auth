@@ -23,3 +23,23 @@ exports.signup = async (req, res, next) => {
 
   res.status(201).json({ token, user: newUser });
 };
+
+exports.login = async (req, res, next) => {
+  const { email, password } = req.body;
+
+  if (!email || !password) {
+    return next(new Error("please provide email and password!"));
+  }
+
+  const user = await User.findOne({ email }).select("+password");
+
+  if (!user || !(await user.isPasswordCorrect(password, user.password))) {
+    return next(new Error("Incorrect email or password"));
+  }
+
+  const token = signToken(user.id);
+
+  res.status(201).json({
+    token,
+  });
+};
