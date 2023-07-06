@@ -1,3 +1,4 @@
+const asyncHandler = require("express-async-handler");
 const jwt = require("jsonwebtoken");
 const User = require("../models/userModel");
 
@@ -7,7 +8,7 @@ const signToken = (id) => {
   });
 };
 
-exports.signup = async (req, res, next) => {
+exports.signup = asyncHandler(async (req, res, next) => {
   const { name, email, password, passwordConfirm } = req.body;
 
   const newUser = await User.create({
@@ -22,9 +23,9 @@ exports.signup = async (req, res, next) => {
   newUser.password = undefined;
 
   res.status(201).json({ token, user: newUser });
-};
+});
 
-exports.login = async (req, res, next) => {
+exports.login = asyncHandler(async (req, res, next) => {
   const { email, password } = req.body;
 
   if (!email || !password) {
@@ -42,4 +43,4 @@ exports.login = async (req, res, next) => {
   res.status(201).json({
     token,
   });
-};
+});
