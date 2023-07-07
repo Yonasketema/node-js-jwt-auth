@@ -131,7 +131,7 @@ exports.forgotPassword = asyncHandler(async (req, res, next) => {
   }
 });
 
-exports.resetPassword = async (req, res, next) => {
+exports.resetPassword = asyncHandler(async (req, res, next) => {
   const hashedToken = crypto
     .createHash("sha256")
     .update(req.params.token)
@@ -150,6 +150,26 @@ exports.resetPassword = async (req, res, next) => {
   user.passwordConfirm = req.body.passwordConfirm;
   user.passwordResetToken = undefined;
   user.passwordResetExpires = undefined;
+
+  await user.save();
+
+  const token = signToken(user.id);
+
+  res.status(200).json({
+    token,
+  });
+});
+
+exports.changePassword = async (req, res, next) => {
+  const { oldPassword, password, passwordConfirm } = req.body;
+  const user = await User.findById(req.user.id).select("+password");
+
+  if (!(await user.isPasswordCorrect(oldPassword, user.password))) {
+    return next(new Error("Your password is wrong."));
+  }
+
+  user.password = password;
+  user.passwordConfirm = passwordConfirm;
 
   await user.save();
 
