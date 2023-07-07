@@ -80,3 +80,12 @@ exports.protect = asyncHandler(async (req, res, next) => {
 
   next();
 });
+
+exports.permissionTo = (...roles) => {
+  return (req, res, next) => {
+    if (!roles.includes(req.user.role)) {
+      return next(new Error("You are not allowed to access this"));
+    }
+    next();
+  };
+};
