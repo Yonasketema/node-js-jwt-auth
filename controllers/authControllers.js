@@ -44,3 +44,39 @@ exports.login = asyncHandler(async (req, res, next) => {
     token,
   });
 });
+
+exports.protect = asyncHandler(async (req, res, next) => {
+  let token;
+
+  if (
+    req.headers.authorization &&
+    req.headers.authorization.startsWith("Bearer")
+  ) {
+    token = req.headers.authorization.split(" ")[1];
+  }
+  if (!token) {
+    return next(new Error("Authentication credentials were not provided."));
+  }
+  let decoded;
+
+  jwt.verify(token, process.env.SECRET_KEY, (err, dec) => {
+    decoded = { ...dec };
+    if (err) {
+      return next(err);
+    }
+  });
+
+  const user = await User.findById(decoded.id);
+
+  if (!user) {
+    return next(new Error("The user does not exist"));
+  }
+
+  if (user.isPasswordchanged(decoded.iat)) {
+    return next(new Error("User changed password! please login again"));
+  }
+
+  req.user = user;
+
+  next();
+});
