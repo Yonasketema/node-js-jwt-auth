@@ -1,17 +1,38 @@
 const crypto = require("crypto");
+
 const asyncHandler = require("express-async-handler");
 const jwt = require("jsonwebtoken");
+
 const User = require("../models/userModel");
 const sendEmail = require("../utils/email");
+const AppError = require("../utils/error");
 
-const signToken = (id) => {
-  return jwt.sign({ id }, process.env.SECRET_KEY, {
-    expiresIn: process.env.EXPIRE_IN,
+const signToken = (id, res) => {
+  const token = jwt.sign({ id }, process.env.SECRET_KEY, {
+    expiresIn: 2000,
   });
+
+  res.cookie("jwt", token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV !== "development", // Use secure cookies in production
+    sameSite: "strict", // Prevent CSRF attacks
+    maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+  });
+
+  return token;
 };
 
 exports.signup = asyncHandler(async (req, res, next) => {
   const { name, email, password, passwordConfirm } = req.body;
+
+  if (!name || !email || !password || !passwordConfirm) {
+    return next(
+      new AppError(
+        "please provide name, email, password, passwordConfirm !",
+        400
+      )
+    );
+  }
 
   const newUser = await User.create({
     name,
@@ -20,7 +41,7 @@ exports.signup = asyncHandler(async (req, res, next) => {
     passwordConfirm,
   });
 
-  const token = signToken(newUser.id);
+  const token = signToken(newUser.id, res);
 
   newUser.password = undefined;
 
@@ -31,16 +52,16 @@ exports.login = asyncHandler(async (req, res, next) => {
   const { email, password } = req.body;
 
   if (!email || !password) {
-    return next(new Error("please provide email and password!"));
+    return next(new AppError("please provide email and password!", 400));
   }
 
   const user = await User.findOne({ email }).select("+password");
 
   if (!user || !(await user.isPasswordCorrect(password, user.password))) {
-    return next(new Error("Incorrect email or password"));
+    return next(new AppError("Incorrect email or password", 401));
   }
 
-  const token = signToken(user.id);
+  const token = signToken(user.id, res);
 
   res.status(201).json({
     token,
@@ -57,7 +78,9 @@ exports.protect = asyncHandler(async (req, res, next) => {
     token = req.headers.authorization.split(" ")[1];
   }
   if (!token) {
-    return next(new Error("Authentication credentials were not provided."));
+    return next(
+      new AppError("Authentication credentials were not provided.", 401)
+    );
   }
 
   let decoded;
@@ -72,11 +95,11 @@ exports.protect = asyncHandler(async (req, res, next) => {
   const user = await User.findById(decoded.id);
 
   if (!user) {
-    return next(new Error("The user does not exist"));
+    return next(new AppError("The user does not exist", 401));
   }
 
   if (user.isPasswordchanged(decoded.iat)) {
-    return next(new Error("User changed password! please login again"));
+    return next(new AppError("User changed password! please login again", 401));
   }
 
   req.user = user;
@@ -87,7 +110,7 @@ exports.protect = asyncHandler(async (req, res, next) => {
 exports.permissionTo = (...roles) => {
   return (req, res, next) => {
     if (!roles.includes(req.user.role)) {
-      return next(new Error("You are not allowed to access this"));
+      return next(new AppError("You are not allowed to access this", 403));
     }
     next();
   };
@@ -99,7 +122,7 @@ exports.forgotPassword = asyncHandler(async (req, res, next) => {
   const user = await User.findOne({ email });
 
   if (!user) {
-    return next(new Error("There is no user with this email address."));
+    return next(new AppError("There is no user with this email address.", 404));
   }
 
   const resetToken = user.createPasswordResetToken();
@@ -127,7 +150,9 @@ exports.forgotPassword = asyncHandler(async (req, res, next) => {
     user.passwordResetExpires = undefined;
 
     await user.save({ validateBeforeSave: false });
-    return next(new Error("there was an error sending email"));
+    return next(
+      new AppError("there was an error sending email,Try again later", 500)
+    );
   }
 });
 
@@ -143,7 +168,7 @@ exports.resetPassword = asyncHandler(async (req, res, next) => {
   });
 
   if (!user) {
-    return next(new Error("Token is invalid"));
+    return next(new AppError("Token is invalid", 400));
   }
 
   user.password = req.body.password;
@@ -153,7 +178,7 @@ exports.resetPassword = asyncHandler(async (req, res, next) => {
 
   await user.save();
 
-  const token = signToken(user.id);
+  const token = signToken(user.id, res);
 
   res.status(200).json({
     token,
@@ -165,7 +190,7 @@ exports.changePassword = async (req, res, next) => {
   const user = await User.findById(req.user.id).select("+password");
 
   if (!(await user.isPasswordCorrect(oldPassword, user.password))) {
-    return next(new Error("Your password is wrong."));
+    return next(new AppError("Your password is wrong.", 401));
   }
 
   user.password = password;
@@ -173,7 +198,7 @@ exports.changePassword = async (req, res, next) => {
 
   await user.save();
 
-  const token = signToken(user.id);
+  const token = signToken(user.id, res);
 
   res.status(200).json({
     token,
